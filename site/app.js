@@ -53,26 +53,27 @@
   var S = (function () {
     try {
       var s = JSON.parse(localStorage.getItem(KEY) || "null");
-      if (s && typeof s === "object") return { xp: s.xp | 0, best: s.best || {}, drafts: s.drafts || {}, name: typeof s.name === "string" ? s.name : "", pid: typeof s.pid === "string" ? s.pid : "" };
+      if (s && typeof s === "object") return { xp: s.xp | 0, best: s.best || {}, drafts: s.drafts || {}, name: typeof s.name === "string" ? s.name : "", pid: typeof s.pid === "string" ? s.pid : "", code: typeof s.code === "string" ? s.code : "" };
     } catch (e) { /* storage blocked */ }
-    return { xp: 0, best: {}, drafts: {}, name: "", pid: "" };
+    return { xp: 0, best: {}, drafts: {}, name: "", pid: "", code: "" };
   })();
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
   function addXP(n) { S.xp += n; save(); var p = document.getElementById("xp-pill"); if (p) p.textContent = "★ " + S.xp + " XP"; }
 
   // ------------------------------------------------------------ class score sheet (public site only)
   // Pages inside claude.ai can't reach other sites, so only the public site reports scores.
-  var TRACK = !!CFG.scoresUrl && !(window.claude && typeof window.claude.use === "function");
+  var SCRIPT_URL = CFG.scriptUrl || CFG.scoresUrl || "";
+  var TRACK = !!SCRIPT_URL && !(window.claude && typeof window.claude.use === "function");
   var editName = false;
   function report(row) {
     if (!TRACK || !S.name) return Promise.resolve(false);
-    if (!S.pid) { S.pid = Math.random().toString(36).slice(2, 8); save(); }
-    var body = JSON.stringify(Object.assign({ name: S.name, pid: S.pid }, row));
+    var body = JSON.stringify(Object.assign({ name: S.name, pid: devicePid() }, row));
     try {
-      return fetch(CFG.scoresUrl, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: body })
+      return fetch(SCRIPT_URL, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: body })
         .then(function () { return true; }, function () { return false; });
     } catch (e) { return Promise.resolve(false); }
   }
+  function devicePid() { if (!S.pid) { S.pid = Math.random().toString(36).slice(2, 8); save(); } return S.pid; }
   function cleanName(v) { return String(v || "").replace(/\s+/g, " ").trim().slice(0, 40); }
   function nameForm(onSaved, label) {
     var input = h("input", { class: "name-input", id: "player-name", type: "text", maxlength: "40", autocomplete: "given-name", placeholder: "Your first name", "aria-label": "Your name" });
@@ -120,6 +121,13 @@
     window.claude.use("tts").then(function (t) { AI.tts = t; }, function () {});
   }
   var SRClass = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  if (TRACK) {
+    AI.status = "pending";
+    fetch(SCRIPT_URL + "?action=status").then(function (r) { return r.json(); }).then(function (st) {
+      AI.remote = !!(st && st.ai); AI.needsCode = !!(st && st.needsCode);
+      AI.status = AI.remote ? "on" : "off"; aiChanged();
+    }, function () { AI.status = "off"; aiChanged(); });
+  }
 
   // ------------------------------------------------------------ index
   var UNITS = Q.units, ACT = {}, ACT_UNIT = {}, TASK = {}, TASK_UNIT = {}, TASK_ACT = {};
@@ -777,27 +785,42 @@
       if (recOn) rec.stop();
       var text = box.value.trim();
       if (wordsOf(text).length < 3) { out.replaceChildren(h("p", { class: "feedback bad" }, isWrite ? "Write your answer first." : "Speak or type your answer first.")); box.focus(); return; }
-      if (AI.status === "on" && AI.sample) runAI(text); else showQuick(text);
+      if (AI.status === "on" && (AI.sample || AI.remote)) runAI(text); else showQuick(text);
     });
     stopBtn.addEventListener("click", function () { if (ctl) ctl.abort(); });
     disposers.push(function () { if (ctl) ctl.abort(); });
 
-    function runAI(text) {
+    function runAI(text, note) {
+      if (!AI.sample && AI.remote) {
+        if (!S.name) { out.replaceChildren(h("div", { class: "card name-card" }, h("p", { class: "hand" }, "Add your name to use the AI judge"), nameForm(function () { runAI(text); }, "Continue"))); return; }
+        if (AI.needsCode && !S.code) { out.replaceChildren(codeCard(function () { runAI(text); }, note)); return; }
+      }
       ctl = new AbortController();
       judgeBtn.disabled = true; stopBtn.hidden = false;
       out.replaceChildren(h("div", { class: "card thinking" }, h("span", { class: "spinner", "aria-hidden": "true" }), "The judge is reading your answer. This can take up to a minute."));
-      AI.sample.json(buildPrompt(t, text), { signal: ctl.signal }).then(function (res) {
-        renderVerdict(t, text, res, out);
+      askJudge(t, text, ctl.signal).then(function (res) {
+        var band = renderVerdict(t, text, res, out);
+        var st = sendStatus({ lesson: u.title, activity: t.title, type: TAGS[t.kind] + " AI", score: band == null ? 0 : band, total: 9,
+          details: "AI band " + (band == null ? "?" : band.toFixed(1)) + ", " + wordsOf(text).length + " words" });
+        if (st) out.append(st);
       }, function (e) {
         var code = e && e.code;
         if (code === "cancelled") { out.replaceChildren(); return; }
-        if (code === "not_granted" || code === "sampling_disabled" || code === "not_declared" || code === "capability_disabled" || code === "capability_removed") {
+        if (code === "bad_code") { S.code = ""; save(); runAI(text, "That code didn't work. Check it with your teacher."); return; }
+        if (code === "need_name") { S.name = ""; save(); paintNamePill(); runAI(text); return; }
+        if (code === "not_configured" || code === "not_granted" || code === "sampling_disabled" || code === "not_declared" || code === "capability_disabled" || code === "capability_removed") {
           AI.status = "off"; aiChanged();
           out.replaceChildren(h("p", { class: "feedback bad" }, "The AI judge isn't available for this account here, so this is a quick check instead."));
           out.append(quickView(t, text));
           return;
         }
-        var msg = code === "rate_limited" ? "The judge is busy. Wait a minute, then try again."
+        if (code === "daily_limit" || code === "device_limit") {
+          out.replaceChildren(h("p", { class: "feedback bad" }, code === "daily_limit" ? "The class has used today's AI checks. Here's a quick check instead; the AI judge is back tomorrow." : "You've used a lot of AI checks on this device. Here's a quick check instead; try the AI judge again later."));
+          out.append(quickView(t, text));
+          return;
+        }
+        var msg = code === "rate_limited" || code === "busy" ? "The judge is busy. Wait a minute, then try again."
+          : code === "refused" ? "The judge couldn't score this answer. Try rewording it."
           : code === "invalid_json" ? "The feedback came back in the wrong format. Press the button to try again."
           : code === "session_expired" ? "Your claude.ai session expired. Sign in again, then try again."
           : "The judge couldn't be reached. Try again in a moment.";
@@ -867,7 +890,7 @@
   function str(x) { return typeof x === "string" ? x : x == null ? "" : String(x); }
   function arr(x) { return Array.isArray(x) ? x : []; }
   function renderVerdict(t, text, res, out) {
-    if (!res || typeof res !== "object") { out.replaceChildren(h("p", { class: "feedback bad" }, "The feedback was empty. Try again.")); return; }
+    if (!res || typeof res !== "object") { out.replaceChildren(h("p", { class: "feedback bad" }, "The feedback was empty. Try again.")); return null; }
     var isWrite = t.kind === "write";
     var keys = isWrite ? [["task", "Task Response"], ["coherence", "Coherence & Cohesion"], ["lexical", "Vocabulary (Lexical Resource)"], ["grammar", "Grammar"]]
       : [["fluency", "Fluency & Coherence"], ["lexical", "Vocabulary (Lexical Resource)"], ["grammar", "Grammar"]];
@@ -906,6 +929,33 @@
       res.nextStep ? h("div", null, h("h3", null, "Practise next"), h("p", { style: "margin:4px 0" }, str(res.nextStep)), res.nextStepVi ? h("p", { class: "vi", lang: "vi" }, str(res.nextStepVi)) : null) : null,
       h("p", { class: "note" }, "AI estimate for practice only. Real IELTS scores come from trained examiners."));
     out.replaceChildren(card);
+    return overall;
+  }
+
+  // Ask the AI judge: claude.ai's built-in Claude, or the class Apps Script on the public site.
+  function askJudge(t, text, signal) {
+    if (AI.sample) return AI.sample.json(buildPrompt(t, text), { signal: signal });
+    var task = { kind: t.kind, method: t.method, part: t.part, question: t.question, prompt: t.prompt, notes: t.notes, cue: t.cue,
+      targetWords: t.targetWords, minTarget: t.minTarget, time: t.time, minWords: t.minWords, maxWords: t.maxWords, table: t.table };
+    var body = JSON.stringify({ action: "judge", name: S.name, pid: devicePid(), code: S.code || "", text: text.slice(0, 6000), task: task });
+    return fetch(SCRIPT_URL, { method: "POST", body: body, signal: signal })
+      .then(function (r) { return r.json(); }, function (e) { throw { code: e && e.name === "AbortError" ? "cancelled" : "upstream_error" }; })
+      .then(function (res) {
+        if (res && res.ok && res.result) return res.result;
+        throw { code: (res && res.error) || "upstream_error" };
+      });
+  }
+  function codeCard(onSaved, note) {
+    var input = h("input", { class: "name-input", id: "class-code", type: "text", maxlength: "40", autocomplete: "off", placeholder: "Class code", "aria-label": "Class code" });
+    return h("div", { class: "card name-card" },
+      h("p", { class: "hand" }, note || "Enter the class code from your teacher"),
+      h("form", { class: "name-form", onsubmit: function (e) {
+        e.preventDefault();
+        var v = input.value.trim();
+        if (!v) { input.focus(); return; }
+        S.code = v.slice(0, 40); save(); onSaved();
+      } }, input, h("button", { class: "btn primary", type: "submit" }, "Continue")),
+      h("p", { class: "note" }, "You only need to enter it once on this device."));
   }
 
   // ------------------------------------------------------------ quick check (no AI)

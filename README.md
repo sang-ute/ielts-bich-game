@@ -17,44 +17,54 @@ It has five lessons and 30 activities:
 | Speak | Answer Part 1, 2 and 3 questions out loud or by typing |
 | Write | Short Task 1 and Task 2 writing tasks |
 
-## Two versions
-
-| | Public site (GitHub Pages) | Class version (claude.ai) |
-|---|---|---|
-| Games | All | All |
-| Speech input | Browser speech recognition (Chrome, Edge) | claude.ai dictation |
-| Feedback on speaking and writing | Quick check of structure, length and key words | **AI judge**: band estimate, fixes, a stronger version |
-
 - Public site: https://sang-ute.github.io/ielts-bich-game/
-- Class version: https://claude.ai/artifact/WfkyKywkapCviNqJuL7cLR (opens for people the owner shares it with)
+- Class version on claude.ai: https://claude.ai/artifact/WfkyKywkapCviNqJuL7cLR (opens for people the owner shares it with)
 
-The AI judge runs on the viewer's own claude.ai account, so the public site doesn't need an API key.
-`site/config.js` holds the link between the two versions.
+## The class script: scores and AI judge
 
-## Score tracking (Google Sheet)
+The public site talks to one Google Apps Script ([`apps-script/Code.gs`](apps-script/Code.gs)),
+attached to the class sheet **IELTS Practice Quest scores** in the IELTS_Bich Drive folder. It does two jobs:
 
-On the public site, each student types their first name once. Every finished activity,
-and every speaking or writing quick check, then adds a row to the class sheet
-**IELTS Practice Quest scores** (in the IELTS_Bich Drive folder):
+1. **Scores.** Students type their first name once. Every finished activity, quick check and AI check
+   adds a row to the sheet. The *By student* and *By activity* tabs summarise them.
+   Only names and scores are saved: no answers, recordings or transcripts.
+2. **AI judge.** When the script has an Anthropic API key, the speaking and writing tasks get a band
+   estimate, fixes and a stronger version of the answer. The key stays in the script's private
+   settings; the website never sees it. The script builds the judging prompt itself, so the
+   endpoint only scores IELTS answers.
 
-| Tab | What it shows |
-|---|---|
-| Scores | One row per result: time, student, lesson, activity, type, score, total, percent, details, device ID |
-| By student | Activities finished, average score and last played, per student |
-| By activity | Attempts and average score for each activity |
+Without a key, the site falls back to the quick check (structure, length and key words).
 
-No answers, recordings or transcripts are sent, only names and scores.
-
-**Connect it (once):**
+### Set it up (once)
 
 1. Open the sheet, then **Extensions > Apps Script**.
-2. Replace the editor's contents with [`apps-script/Code.gs`](apps-script/Code.gs) and save.
-3. **Deploy > New deployment**, choose **Web app**, set *Execute as: Me* and *Who has access: Anyone*, then **Deploy**.
-4. Allow access when Google asks. Because the script is your own and unverified, Google shows a warning; choose **Advanced > Go to project**.
-5. Copy the **Web app URL** (it ends in `/exec`) into `site/config.js` as `scoresUrl`, then push.
+2. Replace the editor's contents with `apps-script/Code.gs` and save.
+3. **Project Settings** (gear icon) > **Script properties** > add:
 
-Anyone with the site can add rows, because students don't log in. That's fine for class practice;
-delete stray rows in the sheet if needed.
+   | Property | Value |
+   |---|---|
+   | `ANTHROPIC_API_KEY` | A key from [console.anthropic.com](https://console.anthropic.com). Leave it out to keep only score tracking. |
+   | `CLASS_CODE` | Optional. Students type it once before using the AI judge. |
+   | `MODEL` | Optional. Default `claude-opus-5-5`. `claude-haiku-5-5` costs far less. |
+   | `DAILY_LIMIT` | Optional. AI checks per day for the whole class. Default 300. |
+   | `DEVICE_LIMIT` | Optional. AI checks per device every 6 hours. Default 40. |
+
+4. **Deploy > New deployment**, choose **Web app**, set *Execute as: Me* and *Who has access: Anyone*, then **Deploy**.
+5. Allow access when Google asks. Because the script is your own and unverified, Google shows a warning; choose **Advanced > Go to project**.
+6. Copy the **Web app URL** (it ends in `/exec`) into `site/config.js` as `scriptUrl`, then push.
+
+After changing the code later, use **Deploy > Manage deployments > Edit > Version: New version**
+so the same URL serves it. Changing script properties needs no redeploy.
+
+### Cost
+
+Each AI check is one request to the Anthropic API, billed to the key's account. With the default
+model (Claude Opus 5.5, $4 / $20 per million input / output tokens) a check uses roughly 1,500
+input and 1,000 output tokens, about **$0.03**. The daily limit caps spending at about $9 a day with
+the defaults. Setting `MODEL` to `claude-haiku-5-5` ($0.10 / $0.50) brings a check under $0.01.
+
+Students don't log in, so anyone with the site can use it. The class code, the daily limit and the
+per-device limit keep that in check; delete stray rows in the sheet if needed.
 
 ## Edit the content
 
@@ -70,4 +80,4 @@ Open `site/index.html` in a browser, or serve the folder:
 npx serve site
 ```
 
-Progress (XP, best scores, drafts) is stored in the browser's `localStorage`.
+Progress (XP, best scores, drafts) is also stored in the browser's `localStorage`.
