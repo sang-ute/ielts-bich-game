@@ -25,6 +25,9 @@ It has five lessons and 30 activities:
 | Speech input | Browser speech recognition (Chrome, Edge) | claude.ai dictation |
 | Feedback on speaking and writing | Quick check of structure, length and key words | **AI judge**: band estimate, fixes, a stronger version |
 
+- Public site: https://sang-ute.github.io/ielts-bich-game/
+- Class version: https://claude.ai/artifact/WfkyKywkapCviNqJuL7cLR (opens for people the owner shares it with)
+
 The AI judge runs on the viewer's own claude.ai account, so the public site doesn't need an API key.
 `site/config.js` holds the link between the two versions.
 

@@ -3,5 +3,5 @@
  * classUrl: the claude.ai version with the AI judge. Leave empty to hide the link. */
 window.QUEST_CONFIG = {
   siteUrl: "https://sang-ute.github.io/ielts-bich-game/",
-  classUrl: ""
+  classUrl: "https://claude.ai/artifact/WfkyKywkapCviNqJuL7cLR"
 };
