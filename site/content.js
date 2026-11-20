@@ -21,7 +21,7 @@ window.QUEST = {
       title: "In, on, at",
       subtitle: "Prepositions of time and place",
       source: "Homework · 11 Nov",
-      color: "teal",
+      color: "mint",
       activities: [
         {
           id: "prep-homework",
@@ -223,7 +223,7 @@ window.QUEST = {
       title: "Advertising",
       subtitle: "Vocabulary, collocations and grammar",
       source: "Lecture 2 · 12 Nov",
-      color: "violet",
+      color: "grape",
       activities: [
         {
           id: "ads-vocab",
@@ -388,7 +388,7 @@ window.QUEST = {
       title: "Speaking skills",
       subtitle: "Parts 1, 2 and 3 · Topic: tidiness",
       source: "Slides + recording · 18 Nov",
-      color: "amber",
+      color: "sun",
       activities: [
         {
           id: "speaking-test",
@@ -486,7 +486,7 @@ window.QUEST = {
       title: "Writing skills",
       subtitle: "Task 1 reports and Task 2 essays",
       source: "Slides · 19 Nov",
-      color: "indigo",
+      color: "sky",
       activities: [
         {
           id: "writing-tf",

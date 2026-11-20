@@ -31,6 +31,31 @@ It has five lessons and 30 activities:
 The AI judge runs on the viewer's own claude.ai account, so the public site doesn't need an API key.
 `site/config.js` holds the link between the two versions.
 
+## Score tracking (Google Sheet)
+
+On the public site, each student types their first name once. Every finished activity,
+and every speaking or writing quick check, then adds a row to the class sheet
+**IELTS Practice Quest scores** (in the IELTS_Bich Drive folder):
+
+| Tab | What it shows |
+|---|---|
+| Scores | One row per result: time, student, lesson, activity, type, score, total, percent, details, device ID |
+| By student | Activities finished, average score and last played, per student |
+| By activity | Attempts and average score for each activity |
+
+No answers, recordings or transcripts are sent, only names and scores.
+
+**Connect it (once):**
+
+1. Open the sheet, then **Extensions > Apps Script**.
+2. Replace the editor's contents with [`apps-script/Code.gs`](apps-script/Code.gs) and save.
+3. **Deploy > New deployment**, choose **Web app**, set *Execute as: Me* and *Who has access: Anyone*, then **Deploy**.
+4. Allow access when Google asks. Because the script is your own and unverified, Google shows a warning; choose **Advanced > Go to project**.
+5. Copy the **Web app URL** (it ends in `/exec`) into `site/config.js` as `scoresUrl`, then push.
+
+Anyone with the site can add rows, because students don't log in. That's fine for class practice;
+delete stray rows in the sheet if needed.
+
 ## Edit the content
 
 All questions are in [`site/content.js`](site/content.js). Each activity has a `kind`

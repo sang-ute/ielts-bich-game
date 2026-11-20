@@ -53,12 +53,62 @@
   var S = (function () {
     try {
       var s = JSON.parse(localStorage.getItem(KEY) || "null");
-      if (s && typeof s === "object") return { xp: s.xp | 0, best: s.best || {}, drafts: s.drafts || {} };
+      if (s && typeof s === "object") return { xp: s.xp | 0, best: s.best || {}, drafts: s.drafts || {}, name: typeof s.name === "string" ? s.name : "", pid: typeof s.pid === "string" ? s.pid : "" };
     } catch (e) { /* storage blocked */ }
-    return { xp: 0, best: {}, drafts: {} };
+    return { xp: 0, best: {}, drafts: {}, name: "", pid: "" };
   })();
   function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* ignore */ } }
   function addXP(n) { S.xp += n; save(); var p = document.getElementById("xp-pill"); if (p) p.textContent = "★ " + S.xp + " XP"; }
+
+  // ------------------------------------------------------------ class score sheet (public site only)
+  // Pages inside claude.ai can't reach other sites, so only the public site reports scores.
+  var TRACK = !!CFG.scoresUrl && !(window.claude && typeof window.claude.use === "function");
+  var editName = false;
+  function report(row) {
+    if (!TRACK || !S.name) return Promise.resolve(false);
+    if (!S.pid) { S.pid = Math.random().toString(36).slice(2, 8); save(); }
+    var body = JSON.stringify(Object.assign({ name: S.name, pid: S.pid }, row));
+    try {
+      return fetch(CFG.scoresUrl, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: body })
+        .then(function () { return true; }, function () { return false; });
+    } catch (e) { return Promise.resolve(false); }
+  }
+  function cleanName(v) { return String(v || "").replace(/\s+/g, " ").trim().slice(0, 40); }
+  function nameForm(onSaved, label) {
+    var input = h("input", { class: "name-input", id: "player-name", type: "text", maxlength: "40", autocomplete: "given-name", placeholder: "Your first name", "aria-label": "Your name" });
+    input.value = S.name || "";
+    return h("form", { class: "name-form", onsubmit: function (e) {
+      e.preventDefault();
+      var v = cleanName(input.value);
+      if (!v) { input.focus(); return; }
+      S.name = v; save(); paintNamePill();
+      if (onSaved) onSaved(v);
+    } }, input, h("button", { class: "btn primary", type: "submit" }, label || "Save"));
+  }
+  function paintNamePill() {
+    var p = document.getElementById("name-pill");
+    if (!p) return;
+    p.hidden = !S.name;
+    p.textContent = S.name ? S.name + " · change" : "";
+  }
+  function sendStatus(row) {
+    if (!TRACK) return null;
+    var el = h("div", { class: "send-status", "aria-live": "polite" });
+    function send() {
+      el.replaceChildren(h("span", { class: "note" }, "Sending to your teacher…"));
+      report(row).then(function (ok) {
+        el.replaceChildren(ok ? h("p", { class: "hand sent" }, "Sent to your teacher ✓")
+          : h("p", { class: "note" }, "This score didn't send. Check your internet connection, then play again."));
+      });
+    }
+    if (S.name) send();
+    else el.replaceChildren(h("p", { class: "note" }, "Add your name to send this score to your teacher."), nameForm(send, "Send score"));
+    return el;
+  }
+  function cheer(ratio) {
+    var n = S.name ? ", " + S.name : "";
+    return ratio >= 0.9 ? "Brilliant" + n + "!" : ratio >= 0.7 ? "Nice work" + n + "!" : ratio >= 0.4 ? "Getting there" + n + "!" : "Keep going" + n + ". You've got this!";
+  }
 
   // ------------------------------------------------------------ claude.ai capabilities
   var AI = { status: window.claude && typeof window.claude.use === "function" ? "pending" : "off", sample: null, dictation: null, tts: null };
@@ -80,7 +130,7 @@
     });
   });
   var TAGS = { mcq: "Q&A", fill: "Fill", sort: "Drag", match: "Match", order: "Order", speak: "Speak", write: "Write" };
-  function unitVars(u) { return "--u: var(--" + u.color + "); --u-on: var(" + (u.color === "amber" ? "--on-amber" : "--on-accent") + ")"; }
+  function unitVars(u) { return "--u: var(--" + u.color + ")"; }
   function isAuto(a) { return a.kind !== "speak" && a.kind !== "write"; }
   function bestStars(id) { var b = S.best[id]; return b && b.total ? starsFor(b.score / b.total) : 0; }
 
@@ -107,9 +157,11 @@
       h("button", { class: "brand", type: "button", "aria-label": Q.title + ", home", onclick: function () { go("home"); } },
         h("span", { class: "brand-mark", "aria-hidden": "true" }, h("i"), h("i"), h("i")),
         h("span", { class: "brand-name" }, Q.title)),
-      h("div", { class: "top-meta" }, h("span", { class: "pill" }, Q.dates), aiPill(), h("span", { class: "pill", id: "xp-pill" }, "★ " + S.xp + " XP")));
+      h("div", { class: "top-meta" },
+        h("button", { class: "pill name", id: "name-pill", type: "button", hidden: !S.name, onclick: function () { editName = true; go("home"); } }, S.name ? S.name + " · change" : ""),
+        h("span", { class: "pill" }, Q.dates), aiPill(), h("span", { class: "pill xp", id: "xp-pill" }, "★ " + S.xp + " XP")));
     var foot = h("footer", { class: "footer" },
-      "Built from the class slides, homework and lecture notes. Progress is saved in this browser only.",
+      "Built from the class slides, homework and lecture notes. " + (TRACK ? "When you finish an activity, your score goes to your teacher's sheet." : "Progress is saved in this browser only."),
       AI.status === "off" && CFG.classUrl ? [" ", h("a", { href: CFG.classUrl, target: "_blank", rel: "noopener" }, "Open the class version with the AI judge.")] : null,
       AI.status !== "off" && CFG.siteUrl ? [" Public version: ", h("a", { href: CFG.siteUrl, target: "_blank", rel: "noopener" }, CFG.siteUrl.replace(/^https?:\/\//, ""))] : null);
     app.replaceChildren(top, h("main", { id: "main" }, kids), foot);
@@ -138,13 +190,22 @@
         : "Speak or type an answer and check its structure, length and key words.";
     }
     paintSub(); aiListeners.push(paintSub);
+    var greet;
+    if (!S.name || editName) {
+      var changing = !!S.name;
+      editName = false;
+      greet = h("div", { class: "name-card" },
+        h("p", { class: "hand big" }, changing ? "Who's playing now?" : "Hi there! What's your name?"),
+        nameForm(function () { go("home"); }, changing ? "Save" : "Let's go"),
+        h("p", { class: "note" }, TRACK ? "Your teacher will see your name next to your scores." : "We'll use it to cheer you on. It stays in this browser."));
+    } else greet = h("p", { class: "hand big greet" }, "Hi, " + S.name + "!");
     shell(
-      h("section", { class: "hero" }, h("p", { class: "eyebrow" }, Q.dates), h("h1", null, "This week's lessons"),
+      h("section", { class: "hero" }, greet, h("h1", null, "This week's lessons"),
         h("p", { class: "lede" }, "Every round comes from the class slides, the homework and the lecture notes. Play a lesson, beat your best score, then practise speaking with the judge.")),
       h("div", { class: "actions" },
-        h("button", { class: "action primary", type: "button", onclick: function () { go("mixed"); } },
+        h("button", { class: "action", type: "button", onclick: function () { go("mixed"); } },
           h("span", { class: "action-title" }, "Mixed challenge"), h("span", { class: "action-sub" }, "10 random questions from every lesson. A quick warm-up for class.")),
-        h("button", { class: "action", type: "button", onclick: function () { go("judge"); } },
+        h("button", { class: "action judge", type: "button", onclick: function () { go("judge"); } },
           h("span", { class: "action-title" }, "Speaking judge"), judgeSub)),
       h("div", { class: "section-head" }, h("h2", null, "Lessons"), h("span", { class: "note" }, UNITS.length + " lessons · " + acts + " activities")),
       h("div", { class: "units" }, UNITS.map(function (u, i) {
@@ -201,7 +262,7 @@
     if (!isAuto(a)) return go("unit-" + u.id);
     var i = u.activities.indexOf(a), next = null;
     for (var k = i + 1; k < u.activities.length; k++) { if (isAuto(u.activities[k])) { next = u.activities[k]; break; } }
-    runSteps({ title: a.title, intro: a.intro, unit: u, steps: stepsFor(a), back: "unit-" + u.id, backLabel: u.title, saveId: a.id, again: "play-" + a.id, next: next });
+    runSteps({ title: a.title, intro: a.intro, unit: u, steps: stepsFor(a), back: "unit-" + u.id, backLabel: u.title, saveId: a.id, again: "play-" + a.id, next: next, type: TAGS[a.kind] });
   }
   function startMixed() {
     var pool = [];
@@ -210,7 +271,7 @@
         if (a.kind === "mcq" || a.kind === "fill") a.items.forEach(function (it) { pool.push({ kind: a.kind, item: it, bank: a.bank, points: 1, label: u.title, unit: u }); });
       });
     });
-    runSteps({ title: "Mixed challenge", intro: "Questions from every lesson.", steps: shuffle(pool).slice(0, 10), back: "home", backLabel: "Home", saveId: "mixed", again: "mixed" });
+    runSteps({ title: "Mixed challenge", intro: "Questions from every lesson.", steps: shuffle(pool).slice(0, 10), back: "home", backLabel: "Home", saveId: "mixed", again: "mixed", type: "Mixed" });
   }
   function runSteps(cfg) {
     var total = cfg.steps.reduce(function (s, x) { return s + x.points; }, 0);
@@ -246,12 +307,14 @@
       var prev = S.best[cfg.saveId], isBest = !prev || st.score / total > prev.score / prev.total;
       if (isBest) S.best[cfg.saveId] = { score: st.score, total: total };
       addXP(gained);
-      var msg = ratio >= 0.9 ? "Excellent work." : ratio >= 0.7 ? "Good job. A few to review." : ratio >= 0.4 ? "Getting there. Review the answers below and try again." : "Keep practising. Read the explanations, then play again.";
+      var msg = ratio >= 0.9 ? "Excellent work." : ratio >= 0.7 ? "A few to review below." : ratio >= 0.4 ? "Review the answers below and try again." : "Read the explanations, then play again.";
       stage.replaceChildren(h("div", { class: "card result" },
         h("p", { class: "eyebrow" }, isBest && prev ? "New best score" : "Your score"),
         h("div", { class: "score-big" }, String(st.score), h("small", null, " / " + total)),
         starEl(starsFor(ratio)),
+        h("p", { class: "hand big" }, cheer(ratio)),
         h("p", null, msg + " +" + gained + " XP."),
+        sendStatus({ lesson: cfg.unit ? cfg.unit.title : "Mixed", activity: cfg.title, type: cfg.type || "", score: st.score, total: total, details: st.wrong.length ? st.wrong.length + " to review" : "all correct" }),
         st.wrong.length ? h("div", { class: "review" }, h("h3", null, "Review"), st.wrong.map(function (w) {
           return h("div", { class: "review-item" }, h("div", null, w.q), h("div", null, "You: " + w.your + " · ", h("span", { class: "right" }, w.right)));
         })) : null,
@@ -741,7 +804,13 @@
         out.replaceChildren(h("p", { class: "feedback bad" }, msg));
       }).then(function () { judgeBtn.disabled = false; stopBtn.hidden = true; ctl = null; });
     }
-    function showQuick(text) { out.replaceChildren(quickView(t, text)); addXP(5); }
+    function showQuick(text) {
+      var view = quickView(t, text);
+      out.replaceChildren(view);
+      var st = sendStatus({ lesson: u.title, activity: t.title, type: TAGS[t.kind], score: view.qcGood, total: view.qcTotal, details: wordsOf(text).length + " words, quick check" });
+      if (st) out.append(st);
+      addXP(5);
+    }
 
     shell(h("div", { style: unitVars(u) },
       backBtn("unit-" + u.id, u.title),
@@ -893,12 +962,14 @@
     words.forEach(function (w) { w = w.toLowerCase(); if (w.length < 4 || STOP.indexOf(w) >= 0) return; freq[w] = (freq[w] || 0) + 1; if (!top || freq[w] > freq[top]) top = w; });
     if (top && freq[top] >= 4) add(false, "Variety: \"" + top + "\" used " + freq[top] + " times", "Swap some for a synonym.");
     var good = items.filter(function (i) { return i.ok; }).length;
-    return h("div", { class: "card verdict-card" },
+    var card = h("div", { class: "card verdict-card" },
       h("div", { class: "overall" }, h("div", null, h("div", { class: "eyebrow" }, "Quick check · not AI"), h("div", { class: "overall-band" }, good + "/" + items.length)),
         h("p", { class: "note", style: "max-width:46ch" }, "Checks structure, length and key words. It can't judge grammar or meaning." + (CFG.classUrl && AI.status === "off" ? " For a band estimate, use the class version with the AI judge." : ""))),
       h("ul", { class: "check-list" }, items.map(function (i) {
         return h("li", null, h("span", { class: "mark" + (i.ok ? " yes" : ""), "aria-label": i.ok ? "done" : "to do" }, i.ok ? "✓" : "✗"), h("div", null, h("strong", null, i.label), h("div", { class: "note" }, i.tip)));
       })));
+    card.qcGood = good; card.qcTotal = items.length;
+    return card;
   }
 
   // ------------------------------------------------------------ boot
