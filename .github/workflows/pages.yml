@@ -30,6 +30,13 @@ jobs:
       - name: Check scripts for syntax errors
         run: for f in site/*.js; do node --check "$f"; done
 
+      # GitHub Pages lets browsers cache files for 10 minutes. Adding the commit
+      # to each file link makes browsers fetch the new CSS and JS after every deploy.
+      - name: Version asset links
+        run: |
+          sed -i -E "s/(app\.css|config\.js|content\.js|app\.js)\"/\1?v=${GITHUB_SHA::7}\"/g" site/index.html
+          grep -E "\?v=" site/index.html
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
