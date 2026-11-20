@@ -93,8 +93,8 @@ h2 { font-size: clamp(23px, 3.2vw, 29px); font-weight: 800; }
 h3 { font-size: 19px; font-weight: 800; }
 .lede { color: var(--muted); max-width: 62ch; margin: 8px 0 0; }
 .eyebrow { font-size: 13px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0; }
-.hand { font-family: var(--font-display); font-weight: 900; color: var(--brand); font-size: 22px; line-height: 1.2; margin: 0; }
-.hand.big { font-size: clamp(26px, 3.6vw, 32px); }
+.hand { font-family: var(--font-display); font-weight: 800; color: var(--ink); font-size: 22px; line-height: 1.15; margin: 0; text-wrap: balance; }
+.hand.big { font-size: clamp(23px, 3.2vw, 29px); }
 .greet { display: inline-block; margin-bottom: 6px; }
 
 /* ---------- home ---------- */
